@@ -14,6 +14,28 @@ litter %>%
 
 litter$Total = rowSums(litter[c("ACRU", "FAGR", "LITU", "Other")])
 
+# Trees
+trees <- read_csv("inventory.csv")
+trees %>% 
+  select(Plot, Grid, Species_code, DBH_2020) %>% 
+  mutate(Species = case_when(Species_code == "ACRU" ~ "ACRU",
+                             Species_code == "LITU" ~ "LITU",
+                             Species_code == "FAGR" ~ "FAGR",
+                             .default = "Other"),
+         Plot = substr(Plot, 1, 1)) %>% 
+  group_by(Plot, Grid, Species) %>% 
+  summarise(Leaf = sum(DBH_2020 ^ 2, na.rm = TRUE), .groups = "drop") ->
+  trees
+
+# Compute totals
+trees %>%
+  group_by(Plot, Grid) %>% 
+  summarise(Leaf = sum(Leaf)) %>% 
+  mutate(Species = "Total") %>%
+  bind_rows(trees) ->
+  trees
+
+
 message("Mean and variability by plot and species:")
 library(tidyr)
 litter %>% 
@@ -41,3 +63,19 @@ for(pnum in seq_along(plots)) {
 }
 print(result)
 
+# Temporary - fake grid locations
+grid_locations <- expand_grid(Plot = c("C", "F", "S"), Trap = LETTERS[1:12])
+grid_locations$Grid <- sample(unique(trees$Grid), size = nrow(grid_locations))
+
+litter %>% 
+  left_join(grid_locations, by = c("Plot", "Trap")) %>% 
+  pivot_longer(c(ACRU, FAGR, LITU, Other, Total), 
+               names_to = "Species", values_to = "Litter") ->
+  litter_long
+
+# Exact grid square matching
+litter_long %>% 
+  left_join(trees, by = c("Plot", "Grid", "Species")) %>% 
+  replace_na(list(Leaf = 0))
+
+# Fuzzy match - any tree within a 3x3 centered around the trap is included
