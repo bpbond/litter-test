@@ -1,34 +1,42 @@
-# Hmm
+# Does litter variability (as recorded by the 12 litter traps in each
+# TEMPEST plot) corresponding with the spatial variability of the tree
+# canopy above?
+# BBL October 2024
 
 library(readr)
-litter <- read_csv("TEMPEST litter data - Sheet1.csv", skip = 1)
 library(lubridate)
 library(dplyr)
+
+# Read in data =====
+
+# Litter data
+litter <- read_csv("TEMPEST litter data - Sheet1.csv", skip = 1)
 litter %>% 
   mutate(Date = mdy(litter$`Date collected`)) %>% 
-  filter(year(Date) == 2020) %>% 
+  filter(year(Date) == 2020) %>%  # for now
   group_by(Plot, Trap) %>% 
   summarise(ACRU = sum(`Leaf-ACRU`), FAGR = sum(`Leaf-FAGR`), 
             LITU = sum(`Leaf-LITU`), Other = sum(`Leaf-Other`),
             .groups = "drop") ->
   litter
-
 litter$Total = rowSums(litter[c("ACRU", "FAGR", "LITU", "Other")])
 
-# Trees
+# Tree inventory data
 trees <- read_csv("inventory.csv")
 trees %>% 
   select(Plot, Grid, Species_code, DBH_2020) %>% 
+  # Litter has an 'other' category, so collapse other tree species to that
   mutate(Species = case_when(Species_code == "ACRU" ~ "ACRU",
                              Species_code == "LITU" ~ "LITU",
                              Species_code == "FAGR" ~ "FAGR",
                              .default = "Other"),
          Plot = substr(Plot, 1, 1)) %>% 
+  # compute 'leaf area' - not really, but that's a exponential function of DBH
   group_by(Plot, Grid, Species) %>% 
-  summarise(Leaf = sum(DBH_2020 ^ 2, na.rm = TRUE), .groups = "drop") ->
+  summarise(Leaf = sum(DBH_2020 ^ 2, na.rm = TRUE), .groups = "drop") %>% 
   trees
 
-# Compute totals
+# Compute total and append to the species-specific data
 trees %>%
   group_by(Plot, Grid) %>% 
   summarise(Leaf = sum(Leaf)) %>% 
@@ -36,6 +44,7 @@ trees %>%
   bind_rows(trees) ->
   trees
 
+# Statistics about litter trap data =====
 
 message("Mean and variability by plot and species:")
 library(tidyr)
@@ -64,17 +73,22 @@ for(pnum in seq_along(plots)) {
 }
 print(result)
 
-# Temporary - fake grid locations
+# Temporary - fake grid locations ====
+
 grid_locations <- expand_grid(Plot = c("C", "F", "S"), Trap = LETTERS[1:12])
 grid_locations$Grid <- sample(unique(na.omit(trees$Grid)), size = nrow(grid_locations))
 
+# Construct grid-cell-specific litter data in long form
 litter %>% 
   left_join(grid_locations, by = c("Plot", "Trap")) %>% 
   pivot_longer(c(ACRU, FAGR, LITU, Other, Total), 
                names_to = "Species", values_to = "Litter") ->
   litter_long
 
+# Do larger litter trap values have larger leaf area above them? =====
+
 # Exact grid square matching
+
 litter_long %>% 
   left_join(trees, by = c("Plot", "Grid", "Species")) %>% 
   replace_na(list(Leaf = 0)) ->
@@ -89,7 +103,7 @@ p <- ggplot(combined_exact, aes(Litter, Leaf, color = Species)) +
 print(p)
 ggsave("exact-matching.png", width = 8, height = 4)
 
-# Fuzzy match - any tree within a 3x3 centered around the trap is included
+# Fuzzy matching - any tree within a 3x3 centered around the trap is included
 
 # Helper function to compute the 3x3 grid around a litter trap
 # For example, for C2 we want {B1, B2, B3, C1, C2, C3, D1, D2, D3}
@@ -129,5 +143,4 @@ p_fuzzy <- p %+% combined_fuzzy
 p_fuzzy <- p_fuzzy + ggtitle("Fuzzy (3x3) grid square matching")
 print(p_fuzzy)
 ggsave("fuzzy-matching.png", width = 8, height = 4)
-
 
