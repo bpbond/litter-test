@@ -33,13 +33,13 @@ trees %>%
          Plot = substr(Plot, 1, 1)) %>% 
   # compute 'leaf area' - not really, but that's a exponential function of DBH
   group_by(Plot, Grid, Species) %>% 
-  summarise(Leaf = sum(DBH_2020 ^ 2, na.rm = TRUE), .groups = "drop") %>% 
+  summarise(Leaf = sum(DBH_2020 ^ 2, na.rm = TRUE), .groups = "drop") -> 
   trees
 
 # Compute total and append to the species-specific data
 trees %>%
   group_by(Plot, Grid) %>% 
-  summarise(Leaf = sum(Leaf)) %>% 
+  summarise(Leaf = sum(Leaf), .groups = "drop") %>% 
   mutate(Species = "Total") %>%
   bind_rows(trees) ->
   trees
@@ -74,13 +74,14 @@ for(pnum in seq_along(plots)) {
 print(result)
 
 # Temporary - fake grid locations ====
-
-grid_locations <- expand_grid(Plot = c("C", "F", "S"), Trap = LETTERS[1:12])
-grid_locations$Grid <- sample(unique(na.omit(trees$Grid)), size = nrow(grid_locations))
+grid_locations <- read_csv("trap_locations.csv", col_types = "cccc")
+# grid_locations <- expand_grid(Plot = c("C", "F", "S"), Trap = LETTERS[1:12])
+# grid_locations$Grid <- sample(unique(na.omit(trees$Grid)), size = nrow(grid_locations))
 
 # Construct grid-cell-specific litter data in long form
 litter %>% 
   left_join(grid_locations, by = c("Plot", "Trap")) %>% 
+  rename(Grid = Grid_Square) %>% 
   pivot_longer(c(ACRU, FAGR, LITU, Other, Total), 
                names_to = "Species", values_to = "Litter") ->
   litter_long
@@ -143,4 +144,9 @@ p_fuzzy <- p %+% combined_fuzzy
 p_fuzzy <- p_fuzzy + ggtitle("Fuzzy (3x3) grid square matching")
 print(p_fuzzy)
 ggsave("fuzzy-matching.png", width = 8, height = 4)
+
+p_fuzzy <- p %+% filter(combined_fuzzy, Species != "Total")
+p_fuzzy <- p_fuzzy + ggtitle("Fuzzy (3x3) grid square matching, no total")
+print(p_fuzzy)
+ggsave("fuzzy-matching-no-total.png", width = 8, height = 4)
 
